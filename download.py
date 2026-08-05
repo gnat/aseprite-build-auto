@@ -44,7 +44,6 @@ def download_file(url: str, destination: Path) -> None:
         with destination.open("wb") as output_file:
             shutil.copyfileobj(response, output_file)
 
-'''
 def get_latest_tag_aseprite() -> str:
     releases_url = (
         f"https://api.github.com/repos/"
@@ -65,7 +64,6 @@ def get_latest_tag_aseprite() -> str:
             return tag_name
 
     raise RuntimeError("No stable Aseprite release was found.")
-'''
 
 def save_aseprite_tag(tag: str) -> None:
     VERSION_FILE.write_text(tag, encoding="utf-8")
@@ -124,7 +122,7 @@ def download_skia_for_windows(tag: str) -> None:
 
 def main() -> None:
     #aseprite_tag = get_latest_tag_aseprite()
-    aesprite_tag = 'beta'
+    aseprite_tag = 'beta'
     print(f"Latest stable Aseprite release: {aseprite_tag}")
 
     clone_aseprite(aseprite_tag)
