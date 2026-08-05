@@ -7,7 +7,6 @@ from pathlib import Path
 
 
 ASEPRITE_REPOSITORY = "aseprite/aseprite"
-SKIA_REPOSITORY = "aseprite/skia"
 SKIA_RELEASE_FILE_NAME = "Skia-Windows-Release-x64.zip"
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -109,43 +108,30 @@ def clone_aseprite(tag: str) -> None:
         check=True,
     )
 
-
-def get_latest_tag_skia() -> str:
-    return "m124-08a5439a6b"
-
-
 def download_skia_for_windows(tag: str) -> None:
-    download_url = (
-        f"https://github.com/{SKIA_REPOSITORY}/releases/download/"
-        f"{tag}/{SKIA_RELEASE_FILE_NAME}"
-    )
-
+    download_url = (f"https://github.com/aseprite/skia/releases/download/{tag}/Skia-Windows-Release-x64.zip")
     SRC_DIR.mkdir(parents=True, exist_ok=True)
-
     if SKIA_DIR.exists():
         print(f"Removing existing directory: {SKIA_DIR}")
         shutil.rmtree(SKIA_DIR)
-
     print(f"Downloading Skia from: {download_url}")
     download_file(download_url, SKIA_ZIP_PATH)
-
     print(f"Extracting Skia to: {SKIA_DIR}")
     SKIA_DIR.mkdir(parents=True, exist_ok=True)
-
     with zipfile.ZipFile(SKIA_ZIP_PATH, "r") as archive:
         archive.extractall(SKIA_DIR)
-
     SKIA_ZIP_PATH.unlink()
 
-
 def main() -> None:
-    aseprite_tag = get_latest_tag_aseprite()
+    #aseprite_tag = get_latest_tag_aseprite()
+    aesprite_tag = 'beta'
     print(f"Latest stable Aseprite release: {aseprite_tag}")
 
     clone_aseprite(aseprite_tag)
     save_aseprite_tag(aseprite_tag)
 
-    skia_tag = get_latest_tag_skia()
+    #skia_tag = "m124-08a5439a6b"
+    skia_tag = 'm151-a90155cff0'
     print(f"Using Skia release: {skia_tag}")
 
     download_skia_for_windows(skia_tag)
