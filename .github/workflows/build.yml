@@ -1,0 +1,76 @@
+name: Auto build Aseprite
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  auto-build:
+    name: Auto build Aseprite for Windows x64
+    runs-on: windows-2022
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Download Aseprite and Skia
+        shell: pwsh
+        run: |
+          python download.py
+      - name: Setup Ninja
+        uses: ashutoshvarma/setup-ninja@v1.1
+      - name: Setup MSVC Developer Command Prompt
+        uses: TheMrMilchmann/setup-msvc-dev@v3
+        with:
+          arch: x64
+      - name: Build Aseprite
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path build -Force | Out-Null
+          cmake `
+            -S "${{ github.workspace }}/src/aseprite" `
+            -B "${{ github.workspace }}/build" `
+            -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DLAF_BACKEND=skia `
+            -DSKIA_DIR="${{ github.workspace }}/src/skia" `
+            -DSKIA_LIBRARY_DIR="${{ github.workspace }}/src/skia/out/Release-x64" `
+            -DSKIA_LIBRARY="${{ github.workspace }}/src/skia/out/Release-x64/skia.lib"
+          cmake `
+            --build "${{ github.workspace }}/build" `
+            --target aseprite
+      - name: Get version
+        id: get_version
+        shell: pwsh
+        run: |
+          $version = (Get-Content version.txt -Raw).Trim()
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw "version.txt is empty."
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+      - name: Create ZIP
+        shell: pwsh
+        run: |
+          $version = "${{ steps.get_version.outputs.version }}"
+          $sourceDirectory = "${{ github.workspace }}/build/bin"
+          $zipPath = "${{ github.workspace }}/Aseprite-Windows-x64-$version.zip"
+          if (-not (Test-Path "$sourceDirectory/aseprite.exe")) {
+            throw "Aseprite executable was not found at $sourceDirectory/aseprite.exe"
+          }
+          if (Test-Path $zipPath) {
+            Remove-Item $zipPath -Force
+          }
+          Compress-Archive `
+            -Path "$sourceDirectory/*" `
+            -DestinationPath $zipPath `
+            -CompressionLevel Optimal
+          Get-FileHash $zipPath -Algorithm SHA256
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Aseprite Windows x64 ${{ steps.get_version.outputs.version }}
+          tag_name: ${{ steps.get_version.outputs.version }}
+          files: |
+            Aseprite-Windows-x64-${{ steps.get_version.outputs.version }}.zip
