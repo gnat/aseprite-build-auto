@@ -4,7 +4,6 @@ on:
     branches:
       - main
   workflow_dispatch:
-
 permissions:
   contents: write
 
@@ -19,28 +18,90 @@ jobs:
         shell: pwsh
         run: |
           python download.py
-      - name: Setup Ninja
-        uses: ashutoshvarma/setup-ninja@v1.1
-      - name: Setup MSVC Developer Command Prompt
-        uses: TheMrMilchmann/setup-msvc-dev@v3
-        with:
-          arch: x64
+      - name: Verify build tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Write-Host "CMake:"
+          cmake --version
+          Write-Host "`nNinja:"
+          ninja --version
+          Write-Host "`nPython:"
+          python --version
+          Write-Host "`nGitHub CLI:"
+          gh --version
+          $requiredCommands = @(
+            "cmake",
+            "ninja",
+            "python",
+            "gh"
+          )
+          foreach ($command in $requiredCommands) {
+            if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
+              throw "Required command was not found: $command"
+            }
+          }
       - name: Build Aseprite
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Path build -Force | Out-Null
+          $ErrorActionPreference = "Stop"
+          # Locate the installed Visual Studio instance.
+          $vswhere = Join-Path `
+            ${env:ProgramFiles(x86)} `
+            "Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe was not found."
+          }
+          $vsInstallPath = & $vswhere `
+            -latest `
+            -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          if ([string]::IsNullOrWhiteSpace($vsInstallPath)) {
+            throw "A compatible Visual Studio installation was not found."
+          }
+          $vsInstallPath = $vsInstallPath.Trim()
+          Write-Host "Using Visual Studio:"
+          Write-Host $vsInstallPath
+          # Initialize Microsoft's official Visual Studio Developer PowerShell.
+          $devShell = Join-Path `
+            $vsInstallPath `
+            "Common7\Tools\Launch-VsDevShell.ps1"
+          if (-not (Test-Path $devShell)) {
+            throw "Launch-VsDevShell.ps1 was not found."
+          }
+          & $devShell -Arch amd64 -HostArch amd64
+          if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
+            throw "The MSVC compiler was not added to PATH."
+          }
+          Write-Host "`nMSVC compiler:"
+          cl.exe 2>&1 | Select-Object -First 3
+          $buildDirectory = "${{ github.workspace }}/build"
+          if (Test-Path $buildDirectory) {
+            Remove-Item $buildDirectory -Recurse -Force
+          }
+          New-Item `
+            -ItemType Directory `
+            -Path $buildDirectory |
+            Out-Null
           cmake `
             -S "${{ github.workspace }}/src/aseprite" `
-            -B "${{ github.workspace }}/build" `
+            -B $buildDirectory `
             -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DLAF_BACKEND=skia `
             -DSKIA_DIR="${{ github.workspace }}/src/skia" `
             -DSKIA_LIBRARY_DIR="${{ github.workspace }}/src/skia/out/Release-x64" `
             -DSKIA_LIBRARY="${{ github.workspace }}/src/skia/out/Release-x64/skia.lib"
+          if ($LASTEXITCODE -ne 0) {
+            throw "CMake configuration failed."
+          }
           cmake `
-            --build "${{ github.workspace }}/build" `
+            --build $buildDirectory `
             --target aseprite
+          if ($LASTEXITCODE -ne 0) {
+            throw "Aseprite compilation failed."
+          }
       - name: Get version
         id: get_version
         shell: pwsh
@@ -50,6 +111,19 @@ jobs:
             throw "version.txt is empty."
           }
           "version=$version" >> $env:GITHUB_OUTPUT
+      - name: Inspect executable
+        shell: pwsh
+        run: |
+          $exePath = "${{ github.workspace }}/build/bin/aseprite.exe"
+          if (-not (Test-Path $exePath)) {
+            throw "Aseprite executable was not found: $exePath"
+          }
+          Write-Host "Executable hash:"
+          Get-FileHash $exePath -Algorithm SHA256 |
+            Format-List Algorithm, Hash, Path
+          Write-Host "Executable signature:"
+          Get-AuthenticodeSignature $exePath |
+            Format-List Status, StatusMessage, SignerCertificate
       - name: Create ZIP
         shell: pwsh
         run: |
@@ -57,7 +131,7 @@ jobs:
           $sourceDirectory = "${{ github.workspace }}/build/bin"
           $zipPath = "${{ github.workspace }}/Aseprite-Windows-x64-$version.zip"
           if (-not (Test-Path "$sourceDirectory/aseprite.exe")) {
-            throw "Aseprite executable was not found at $sourceDirectory/aseprite.exe"
+            throw "Aseprite executable was not found."
           }
           if (Test-Path $zipPath) {
             Remove-Item $zipPath -Force
@@ -66,11 +140,81 @@ jobs:
             -Path "$sourceDirectory/*" `
             -DestinationPath $zipPath `
             -CompressionLevel Optimal
-          Get-FileHash $zipPath -Algorithm SHA256
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: Aseprite Windows x64 ${{ steps.get_version.outputs.version }}
-          tag_name: ${{ steps.get_version.outputs.version }}
-          files: |
-            Aseprite-Windows-x64-${{ steps.get_version.outputs.version }}.zip
+          Write-Host "ZIP hash:"
+          Get-FileHash $zipPath -Algorithm SHA256 |
+            Format-List Algorithm, Hash, Path
+      - name: Verify packaged executable
+        shell: pwsh
+        run: |
+          $version = "${{ steps.get_version.outputs.version }}"
+          $zipPath = "${{ github.workspace }}/Aseprite-Windows-x64-$version.zip"
+          $verifyDirectory = "${{ github.workspace }}/verify-package"
+          Remove-Item `
+            $verifyDirectory `
+            -Recurse `
+            -Force `
+            -ErrorAction SilentlyContinue
+          Expand-Archive `
+            -Path $zipPath `
+            -DestinationPath $verifyDirectory
+          $builtHash = (
+            Get-FileHash `
+              "${{ github.workspace }}/build/bin/aseprite.exe" `
+              -Algorithm SHA256
+          ).Hash
+          $packagedHash = (
+            Get-FileHash `
+              "$verifyDirectory/aseprite.exe" `
+              -Algorithm SHA256
+          ).Hash
+          Write-Host "Built executable:    $builtHash"
+          Write-Host "Packaged executable: $packagedHash"
+          if ($builtHash -ne $packagedHash) {
+            throw "The packaged executable does not match the built executable."
+          }
+      - name: Create or update GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = "${{ steps.get_version.outputs.version }}"
+          $title = "Aseprite Windows x64 $version"
+          $zipPath = "${{ github.workspace }}/Aseprite-Windows-x64-$version.zip"
+          $repository = "${{ github.repository }}"
+          if (-not (Test-Path $zipPath)) {
+            throw "Release ZIP was not found: $zipPath"
+          }
+          gh release view `
+            $version `
+            --repo $repository *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $version already exists. Replacing its ZIP."
+            gh release upload `
+              $version `
+              $zipPath `
+              --repo $repository `
+              --clobber
+            if ($LASTEXITCODE -ne 0) {
+              throw "Uploading the replacement release asset failed."
+            }
+            gh release edit `
+              $version `
+              --repo $repository `
+              --title $title
+            if ($LASTEXITCODE -ne 0) {
+              throw "Updating the release title failed."
+            }
+          }
+          else {
+            Write-Host "Creating release $version."
+            gh release create `
+              $version `
+              $zipPath `
+              --repo $repository `
+              --target "${{ github.sha }}" `
+              --title $title `
+              --notes "Automated Windows x64 build of Aseprite $version."
+            if ($LASTEXITCODE -ne 0) {
+              throw "Creating the GitHub release failed."
+            }
+          }
