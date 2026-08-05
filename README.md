@@ -1,5 +1,5 @@
-# GitHub Action Build of Aesprite
+# GitHub Action Build of Aseprite
 
-**Zero dependencies** except for `aesprite/aesprite` and `aesprite/skia` and Microsoft stuff.
+**Zero dependencies** except for `aseprite/aseprite` and `aseprite/skia` and Microsoft stuff.
 
 Currently only Windows is supported by this workflow.
