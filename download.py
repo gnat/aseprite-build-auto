@@ -69,11 +69,11 @@ def download_dependency_skia(tag: str):
     SKIA_ZIP_PATH.unlink()
 
 def main() -> None:
-    aseprite_tag = get_latest_tag_aseprite()
-    print(f"Latest stable Aseprite release: {aseprite_tag}")
+    main_tag = get_latest_tag_aseprite()
+    print(f"Latest stable Aseprite release: {main_tag}")
 
-    clone_aseprite(aseprite_tag)
-    VERSION_FILE.write_text(tag, encoding="utf-8") # Save tag.
+    clone_aseprite(main_tag)
+    VERSION_FILE.write_text(main_tag, encoding="utf-8") # Save tag.
 
     download_dependency_skia('m151-a90155cff0')
     print("Aseprite and Skia downloaded successfully.")
