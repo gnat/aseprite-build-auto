@@ -75,7 +75,7 @@ def main() -> None:
     clone_aseprite(main_tag)
     VERSION_FILE.write_text(main_tag, encoding="utf-8") # Save tag.
 
-    download_dependency_skia('m148-a29c8d23be')
+    download_dependency_skia('m151-a90155cff0')
     print("Aseprite and Skia downloaded successfully.")
 
 if __name__ == "__main__":
