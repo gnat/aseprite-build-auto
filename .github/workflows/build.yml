@@ -134,8 +134,16 @@ jobs:
           $version = "${{ steps.get_version.outputs.version }}"
           $sourceDirectory = "${{ github.workspace }}/build/bin"
           $zipPath = "${{ github.workspace }}/Aseprite-Windows-x64-$version.zip"
+          $genPath = Join-Path $sourceDirectory "gen.exe"
           if (-not (Test-Path "$sourceDirectory/aseprite.exe")) {
             throw "Aseprite executable was not found."
+          }
+          if (Test-Path $genPath) {
+            Write-Host "Removing build-only executable: $genPath"
+            Remove-Item $genPath -Force -ErrorAction SilentlyContinue
+            if (Test-Path $genPath) {
+              Write-Warning "Could not remove gen.exe; continuing anyway."
+            }
           }
           if (Test-Path $zipPath) {
             Remove-Item $zipPath -Force
